@@ -1,11 +1,14 @@
-import requests
-from bs4 import BeautifulSoup
-from datetime import datetime
-import http.client
 import os
 import sys
+import http.client
+from datetime import datetime
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
-# Configuration depuis les variables d'environnement
+# Configuration
 WATCH_URL = "https://consulat-creteil-algerie.fr/5589/rendez-vous-passeport-biometrique/"
 CURRENT_RDV_STR = os.getenv("CURRENT_RDV")
 SMS_TOKEN = os.getenv("SMS_TOKEN")
@@ -26,8 +29,7 @@ def validate_config():
     try:
         datetime.strptime(CURRENT_RDV_STR, "%Y-%m-%d")
     except ValueError:
-        print(f"❌ Format de date invalide pour CURRENT_RDV: {CURRENT_RDV_STR}")
-        print("   Format attendu: YYYY-MM-DD (exemple: 2025-12-31)")
+        print(f"❌ Format de date invalide: {CURRENT_RDV_STR}")
         sys.exit(1)
     
     print("✅ Configuration validée")
@@ -44,95 +46,97 @@ def send_sms(message):
         if response.status == 200:
             print(f"✅ SMS envoyé: {message}")
         else:
-            print(f"⚠️ Erreur envoi SMS: {response.status} - {response.read().decode()}")
+            print(f"⚠️ Erreur SMS: {response.status}")
     except Exception as e:
-        print(f"❌ Erreur lors de l'envoi du SMS: {e}")
+        print(f"❌ Erreur SMS: {e}")
 
 def check_rdv():
-    """Vérifie les rendez-vous disponibles"""
+    """Vérifie les RDV avec Selenium"""
     CURRENT_RDV = datetime.strptime(CURRENT_RDV_STR, "%Y-%m-%d")
     
+    # Configuration Chrome headless
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--window-size=1920,1080")
+    
+    driver = None
     try:
-        print(f"🔍 Vérification des RDV sur {WATCH_URL}")
-        response = requests.get(WATCH_URL, timeout=10)
-        html = response.text
-        soup = BeautifulSoup(html, "html.parser")
+        print(f"🔍 Ouverture du navigateur...")
+        driver = webdriver.Chrome(options=chrome_options)
+        driver.get(WATCH_URL)
         
-        # Trouver toutes les cellules de dates cliquables
-        # Structure: <td data-month="X" data-year="Y"><a data-date="Z">
-        date_cells = soup.select("td[data-handler='selectDay'][data-month][data-year]")
+        print(f"⏳ Attente du chargement du calendrier...")
+        # Attendre que le calendrier soit chargé (max 20 secondes)
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "td[data-handler='selectDay']"))
+        )
         
-        print(f"   {len(date_cells)} dates cliquables trouvées")
+        print(f"✅ Calendrier chargé")
+        
+        # Récupérer toutes les dates cliquables
+        date_cells = driver.find_elements(By.CSS_SELECTOR, "td[data-handler='selectDay'][data-month][data-year]")
+        
+        print(f"   {len(date_cells)} dates trouvées")
         
         better_dates = []
         all_dates = []
         
         for cell in date_cells:
-            # Récupérer les données depuis le <td>
-            month = int(cell.get("data-month", -1)) + 1  # Le mois est en base 0
-            year = int(cell.get("data-year", -1))
-            
-            # Récupérer le jour depuis le <a> enfant
-            link = cell.find("a", {"data-date": True})
-            if not link:
-                continue
-            
-            day = int(link.get("data-date", -1))
-            
-            # Vérifier que toutes les données sont valides
-            if day == -1 or month == -1 or year == -1:
-                continue
-            
             try:
+                month = int(cell.get_attribute("data-month")) + 1
+                year = int(cell.get_attribute("data-year"))
+                
+                link = cell.find_element(By.CSS_SELECTOR, "a[data-date]")
+                day = int(link.get_attribute("data-date"))
+                
                 date = datetime(year, month, day)
                 all_dates.append(date)
                 
-                # Comparer avec le RDV actuel
                 if date < CURRENT_RDV:
                     better_dates.append(date)
-                    print(f"   ✨ Date disponible: {date.strftime('%d/%m/%Y')}")
-            except ValueError as e:
-                print(f"   ⚠️ Date invalide ignorée: {day}/{month}/{year} - {e}")
+                    print(f"   ✨ {date.strftime('%d/%m/%Y')}")
+            except Exception as e:
                 continue
         
-        # Afficher toutes les dates trouvées pour debug
+        # Afficher les dates disponibles
         if all_dates:
             all_dates.sort()
-            print(f"\n📅 Toutes les dates disponibles:")
-            for d in all_dates[:10]:  # Limiter à 10 pour la lisibilité
+            print(f"\n📅 Dates disponibles (10 premières):")
+            for d in all_dates[:10]:
                 prefix = "→" if d < CURRENT_RDV else " "
                 print(f"   {prefix} {d.strftime('%d/%m/%Y')}")
-            if len(all_dates) > 10:
-                print(f"   ... et {len(all_dates) - 10} autres dates")
         
-        # Envoyer SMS si de meilleures dates sont trouvées
+        # Envoyer SMS si meilleure date
         if better_dates:
             better_dates.sort()
             best = better_dates[0]
-            msg = f"🎉 RDV disponible le {best.strftime('%d/%m/%Y')} (votre RDV actuel: {CURRENT_RDV.strftime('%d/%m/%Y')})"
-            print(f"\n{msg}")
-            send_sms(f"RDV Consulat: {best.strftime('%d/%m/%Y')} disponible!")
+            msg = f"RDV Consulat: {best.strftime('%d/%m/%Y')} disponible!"
+            print(f"\n🎉 {msg}")
+            send_sms(msg)
         else:
-            print(f"\nℹ️  Aucun RDV disponible avant votre date actuelle ({CURRENT_RDV.strftime('%d/%m/%Y')})")
+            print(f"\nℹ️  Aucun RDV avant le {CURRENT_RDV.strftime('%d/%m/%Y')}")
             
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Erreur de connexion: {e}")
-        sys.exit(1)
     except Exception as e:
-        print(f"❌ Erreur inattendue: {e}")
+        print(f"❌ Erreur: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
+    finally:
+        if driver:
+            driver.quit()
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("🚀 Démarrage du watcher de RDV Consulat d'Algérie à Créteil")
-    print(f"   Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("🚀 Watcher RDV Consulat (Selenium)")
+    print(f"   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
     
     validate_config()
     check_rdv()
     
     print("=" * 60)
-    print("✅ Exécution terminée")
+    print("✅ Terminé")
     print("=" * 60)

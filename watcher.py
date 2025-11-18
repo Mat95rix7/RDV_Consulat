@@ -15,7 +15,8 @@ CURRENT_RDV_STR = os.getenv("CURRENT_RDV")
 # Twilio credentials
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
-TWILIO_FROM = os.getenv("TWILIO_FROM")  # Votre numéro Twilio
+TWILIO_FROM = os.getenv("TWILIO_FROM")  # Numéro Twilio (optionnel)
+TWILIO_MESSAGING_SERVICE_SID = os.getenv("TWILIO_MESSAGING_SERVICE_SID")  # Messaging Service (optionnel)
 SMS_TO = os.getenv("SMS_TO")  # Votre numéro personnel
 
 def validate_config():
@@ -23,8 +24,14 @@ def validate_config():
     if not CURRENT_RDV_STR:
         print("❌ Variable CURRENT_RDV manquante")
         sys.exit(1)
-    if not SMS_TOKEN:
-        print("❌ Variable SMS_TOKEN manquante")
+    if not TWILIO_ACCOUNT_SID:
+        print("❌ Variable TWILIO_ACCOUNT_SID manquante")
+        sys.exit(1)
+    if not TWILIO_AUTH_TOKEN:
+        print("❌ Variable TWILIO_AUTH_TOKEN manquante")
+        sys.exit(1)
+    if not TWILIO_FROM and not TWILIO_MESSAGING_SERVICE_SID:
+        print("❌ Variable TWILIO_FROM ou TWILIO_MESSAGING_SERVICE_SID requise")
         sys.exit(1)
     if not SMS_TO:
         print("❌ Variable SMS_TO manquante")
@@ -39,30 +46,34 @@ def validate_config():
     print("✅ Configuration validée")
 
 def send_sms(message):
-    """Envoie un SMS via l'API SMSAPI"""
+    """Envoie un SMS via Twilio"""
     try:
-        # Debug : vérifier les credentials (masqués)
-        print(f"   📱 Numéro destinataire: {SMS_TO}")
-        print(f"   🔑 Token présent: {'Oui' if SMS_TOKEN else 'Non'} ({len(SMS_TOKEN) if SMS_TOKEN else 0} caractères)")
+        print(f"   📱 Envoi SMS vers: {SMS_TO}")
         
-        conn = http.client.HTTPSConnection("api.smsapi.com")
-        payload = f"access_token={SMS_TOKEN}&to={SMS_TO}&message={message}"
-        headers = {'Content-type': "application/x-www-form-urlencoded"}
+        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
         
-        conn.request("POST", "/sms.do", payload, headers)
-        response = conn.getresponse()
-        response_body = response.read().decode('utf-8')
-        
-        print(f"   📡 Status API: {response.status}")
-        print(f"   📄 Réponse: {response_body}")
-        
-        if response.status == 200:
-            print(f"✅ SMS envoyé: {message}")
+        # Utiliser soit le numéro, soit le Messaging Service
+        if TWILIO_MESSAGING_SERVICE_SID:
+            print(f"   📞 Via Messaging Service: {TWILIO_MESSAGING_SERVICE_SID}")
+            sms = client.messages.create(
+                body=message,
+                messaging_service_sid=TWILIO_MESSAGING_SERVICE_SID,
+                to=SMS_TO
+            )
         else:
-            print(f"⚠️ Erreur SMS: Status {response.status}")
-            print(f"   Détails: {response_body}")
+            print(f"   📞 Depuis le numéro: {TWILIO_FROM}")
+            sms = client.messages.create(
+                body=message,
+                from_=TWILIO_FROM,
+                to=SMS_TO
+            )
+        
+        print(f"✅ SMS envoyé avec succès!")
+        print(f"   📋 SID: {sms.sid}")
+        print(f"   📊 Status: {sms.status}")
+        
     except Exception as e:
-        print(f"❌ Erreur SMS: {e}")
+        print(f"❌ Erreur lors de l'envoi du SMS: {e}")
         import traceback
         traceback.print_exc()
 

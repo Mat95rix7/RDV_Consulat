@@ -1,0 +1,18 @@
+name: RDV Watcher
+
+on:
+  schedule:
+    - cron: "*/3 * * * *"
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install deps
+      run: pip install requests beautifulsoup4
+
+    - name: Run script
+      run: python watcher.py

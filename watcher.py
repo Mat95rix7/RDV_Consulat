@@ -44,7 +44,7 @@ def send_sms(message):
         if response.status == 200:
             print(f"✅ SMS envoyé: {message}")
         else:
-            print(f"⚠️ Erreur envoi SMS: {response.status}")
+            print(f"⚠️ Erreur envoi SMS: {response.status} - {response.read().decode()}")
     except Exception as e:
         print(f"❌ Erreur lors de l'envoi du SMS: {e}")
 
@@ -54,48 +54,85 @@ def check_rdv():
     
     try:
         print(f"🔍 Vérification des RDV sur {WATCH_URL}")
-        html = requests.get(WATCH_URL, timeout=10).text
+        response = requests.get(WATCH_URL, timeout=10)
+        html = response.text
         soup = BeautifulSoup(html, "html.parser")
         
-        # Tous les jours cliquables
-        days = soup.select("a.ui-state-default")
-        print(f"   {len(days)} dates disponibles trouvées")
+        # Trouver toutes les cellules de dates cliquables
+        # Structure: <td data-month="X" data-year="Y"><a data-date="Z">
+        date_cells = soup.select("td[data-handler='selectDay'][data-month][data-year]")
+        
+        print(f"   {len(date_cells)} dates cliquables trouvées")
         
         better_dates = []
-        for a in days:
-            day = int(a["data-date"])
-            month = int(a.parent["data-month"]) + 1
-            year = int(a.parent["data-year"])
-            date = datetime(year, month, day)
-            
-            if date < CURRENT_RDV:
-                better_dates.append(date)
+        all_dates = []
         
+        for cell in date_cells:
+            # Récupérer les données depuis le <td>
+            month = int(cell.get("data-month", -1)) + 1  # Le mois est en base 0
+            year = int(cell.get("data-year", -1))
+            
+            # Récupérer le jour depuis le <a> enfant
+            link = cell.find("a", {"data-date": True})
+            if not link:
+                continue
+            
+            day = int(link.get("data-date", -1))
+            
+            # Vérifier que toutes les données sont valides
+            if day == -1 or month == -1 or year == -1:
+                continue
+            
+            try:
+                date = datetime(year, month, day)
+                all_dates.append(date)
+                
+                # Comparer avec le RDV actuel
+                if date < CURRENT_RDV:
+                    better_dates.append(date)
+                    print(f"   ✨ Date disponible: {date.strftime('%d/%m/%Y')}")
+            except ValueError as e:
+                print(f"   ⚠️ Date invalide ignorée: {day}/{month}/{year} - {e}")
+                continue
+        
+        # Afficher toutes les dates trouvées pour debug
+        if all_dates:
+            all_dates.sort()
+            print(f"\n📅 Toutes les dates disponibles:")
+            for d in all_dates[:10]:  # Limiter à 10 pour la lisibilité
+                prefix = "→" if d < CURRENT_RDV else " "
+                print(f"   {prefix} {d.strftime('%d/%m/%Y')}")
+            if len(all_dates) > 10:
+                print(f"   ... et {len(all_dates) - 10} autres dates")
+        
+        # Envoyer SMS si de meilleures dates sont trouvées
         if better_dates:
             better_dates.sort()
             best = better_dates[0]
-            msg = f"RDV disponible le {best.strftime('%d/%m/%Y')} (avant le {CURRENT_RDV.strftime('%d/%m/%Y')})"
-            print(f"🎉 {msg}")
-            send_sms(msg)
+            msg = f"🎉 RDV disponible le {best.strftime('%d/%m/%Y')} (votre RDV actuel: {CURRENT_RDV.strftime('%d/%m/%Y')})"
+            print(f"\n{msg}")
+            send_sms(f"RDV Consulat: {best.strftime('%d/%m/%Y')} disponible!")
         else:
-            print(f"ℹ️  Aucun RDV avant le {CURRENT_RDV.strftime('%d/%m/%Y')}")
+            print(f"\nℹ️  Aucun RDV disponible avant votre date actuelle ({CURRENT_RDV.strftime('%d/%m/%Y')})")
             
     except requests.exceptions.RequestException as e:
         print(f"❌ Erreur de connexion: {e}")
         sys.exit(1)
     except Exception as e:
         print(f"❌ Erreur inattendue: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":
-    print("=" * 50)
-    print("🚀 Démarrage du watcher de RDV Consulat")
+    print("=" * 60)
+    print("🚀 Démarrage du watcher de RDV Consulat d'Algérie à Créteil")
     print(f"   Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 50)
+    print("=" * 60)
     
     validate_config()
     check_rdv()
     
-    print("=" * 50)
+    print("=" * 60)
     print("✅ Exécution terminée")
-    print("=" * 50)
+    print("=" * 60)

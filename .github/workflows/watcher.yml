@@ -1,8 +1,8 @@
-name: Consulat RDV Watcher
+name: Consulat RDV Watcher (Selenium)
 
 on:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '0 * * * *'  # Toutes les heures
   workflow_dispatch:
 
 jobs:
@@ -10,24 +10,27 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout du code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configuration de Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Installation des dépendances
-        run: pip install requests beautifulsoup4
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
 
-      - name: Debug - Vérifier les secrets
+      - name: Install ChromeDriver
+        uses: nanasess/setup-chromedriver@v2
+
+      - name: Install dependencies
         run: |
-          echo "CURRENT_RDV existe: ${{ secrets.CURRENT_RDV != '' }}"
-          echo "SMS_TOKEN existe: ${{ secrets.SMS_TOKEN != '' }}"
-          echo "SMS_TO existe: ${{ secrets.SMS_TO != '' }}"
+          pip install selenium
 
-      - name: Vérification des RDV
+      - name: Check RDV
         env:
           CURRENT_RDV: ${{ secrets.CURRENT_RDV }}
           SMS_TOKEN: ${{ secrets.SMS_TOKEN }}

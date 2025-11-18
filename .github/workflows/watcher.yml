@@ -1,18 +1,35 @@
-name: RDV Watcher
+name: Consulat RDV Watcher
 
 on:
   schedule:
-    - cron: "*/3 * * * *"
+    - cron: '0 * * * *'
   workflow_dispatch:
 
 jobs:
-  run:
+  check-rdv:
     runs-on: ubuntu-latest
+    
     steps:
-    - uses: actions/checkout@v3
+      - name: Checkout du code
+        uses: actions/checkout@v4
 
-    - name: Install deps
-      run: pip install requests beautifulsoup4
+      - name: Configuration de Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-    - name: Run script
-      run: python watcher.py
+      - name: Installation des dépendances
+        run: pip install requests beautifulsoup4
+
+      - name: Debug - Vérifier les secrets
+        run: |
+          echo "CURRENT_RDV existe: ${{ secrets.CURRENT_RDV != '' }}"
+          echo "SMS_TOKEN existe: ${{ secrets.SMS_TOKEN != '' }}"
+          echo "SMS_TO existe: ${{ secrets.SMS_TO != '' }}"
+
+      - name: Vérification des RDV
+        env:
+          CURRENT_RDV: ${{ secrets.CURRENT_RDV }}
+          SMS_TOKEN: ${{ secrets.SMS_TOKEN }}
+          SMS_TO: ${{ secrets.SMS_TO }}
+        run: python watcher.py

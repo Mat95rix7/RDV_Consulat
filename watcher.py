@@ -1,18 +1,22 @@
 import os
 import sys
-import http.client
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from twilio.rest import Client
 
 # Configuration
 WATCH_URL = "https://consulat-creteil-algerie.fr/5589/rendez-vous-passeport-biometrique/"
 CURRENT_RDV_STR = os.getenv("CURRENT_RDV")
-SMS_TOKEN = os.getenv("SMS_TOKEN")
-SMS_TO = os.getenv("SMS_TO")
+
+# Twilio credentials
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_FROM = os.getenv("TWILIO_FROM")  # Votre numéro Twilio
+SMS_TO = os.getenv("SMS_TO")  # Votre numéro personnel
 
 def validate_config():
     """Vérifie que toutes les variables d'environnement sont présentes"""
@@ -37,18 +41,30 @@ def validate_config():
 def send_sms(message):
     """Envoie un SMS via l'API SMSAPI"""
     try:
+        # Debug : vérifier les credentials (masqués)
+        print(f"   📱 Numéro destinataire: {SMS_TO}")
+        print(f"   🔑 Token présent: {'Oui' if SMS_TOKEN else 'Non'} ({len(SMS_TOKEN) if SMS_TOKEN else 0} caractères)")
+        
         conn = http.client.HTTPSConnection("api.smsapi.com")
         payload = f"access_token={SMS_TOKEN}&to={SMS_TO}&message={message}"
         headers = {'Content-type': "application/x-www-form-urlencoded"}
+        
         conn.request("POST", "/sms.do", payload, headers)
         response = conn.getresponse()
+        response_body = response.read().decode('utf-8')
+        
+        print(f"   📡 Status API: {response.status}")
+        print(f"   📄 Réponse: {response_body}")
         
         if response.status == 200:
             print(f"✅ SMS envoyé: {message}")
         else:
-            print(f"⚠️ Erreur SMS: {response.status}")
+            print(f"⚠️ Erreur SMS: Status {response.status}")
+            print(f"   Détails: {response_body}")
     except Exception as e:
         print(f"❌ Erreur SMS: {e}")
+        import traceback
+        traceback.print_exc()
 
 def check_rdv():
     """Vérifie les RDV avec Selenium"""
